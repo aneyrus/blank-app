@@ -3,6 +3,7 @@ import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+import requests
 
 def calculate_statistics(data, stat, confidence_interval):
 
@@ -61,3 +62,79 @@ def plot_graph(df, stat, text_on_graph, player, text_type):
 
     # Show the plot in Streamlit
     st.pyplot(fig)
+
+@st.cache
+def fetch_and_save_player_props(teams, sport, markets):
+    """Fetches player prop odds for a list of teams’ next games and returns the results as a single DataFrame."""
+
+    api_key = "e3f2f286022ee4300db6dffc81c306c0"
+    all_rows = []  # List to store rows for all teams
+
+    for team in teams:
+        # Step 1: Get event ID
+        events_response = requests.get(
+            f'https://api.the-odds-api.com/v4/sports/{sport}/events',
+            params={'api_key': api_key}
+        )
+
+        if events_response.status_code != 200:
+            print(f'Failed to get events for {team}: {events_response.text}')
+            continue
+
+        events = events_response.json()
+        event_id, home_team, away_team = None, None, None
+
+        for event in events:
+            if team in (event['home_team'], event['away_team']):
+                event_id, home_team, away_team = event['id'], event['home_team'], event['away_team']
+                break
+
+        if not event_id:
+            print(f'No upcoming game found for {team}.')
+            continue
+
+        odds_response = requests.get(
+            f'https://api.the-odds-api.com/v4/sports/{sport}/events/{event_id}/odds',
+            params={
+                'api_key': api_key,
+                'regions': 'us',
+                'markets': markets,
+                'oddsFormat': 'american',
+                'dateFormat': 'iso',
+            }
+        )
+
+        if odds_response.status_code != 200:
+            print(f'Failed to get odds for {team}: {odds_response.text}')
+            continue
+
+        player_props = odds_response.json()
+
+        # Step 3: Convert to DataFrame
+        for bookmaker in player_props.get('bookmakers', []):
+            for market in bookmaker.get('markets', []):
+                for outcome in market.get('outcomes', []):
+                    all_rows.append({
+                        'id': player_props['id'],
+                        'sport_key': player_props['sport_key'],
+                        'sport_title': player_props['sport_title'],
+                        'commence_time': player_props['commence_time'],
+                        'home_team': player_props['home_team'],
+                        'away_team': player_props['away_team'],
+                        'bookmaker_key': bookmaker['key'],
+                        'bookmaker_title': bookmaker['title'],
+                        'market_key': market['key'],
+                        'last_update': market['last_update'],
+                        'outcome_name': outcome['name'],
+                        'outcome_description': outcome['description'],
+                        'outcome_price': outcome['price'],
+                        'outcome_point': outcome.get('point', None)
+                    })
+
+    if not all_rows:
+        print("No player props found for any of the teams.")
+        return None
+
+    # Concatenate all the rows for each team into a single DataFrame
+    df = pd.DataFrame(all_rows)
+    return df

@@ -1,8 +1,9 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
-from util_functions import calculate_statistics,  plot_graph
+from util_functions import calculate_statistics,  plot_graph, fetch_and_save_player_props
 import matplotlib.pyplot as plt
+from datetime import date, timedelta
 
 st.set_page_config(page_title="Player Props Metrics")
 
@@ -72,12 +73,13 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
+by_game = st.sidebar.toggle("Stats Across Team")
 sport = st.sidebar.selectbox("Select a Sport", ['NBA','NFL'])
 
+
 if sport == 'NFL':
-    @st.cache_data
     def load_nfl():
-        file_path = "01-19-2025-nfl-season-player-feed.xlsx"
+        file_path = "01-26-NFL.xlsx"
         df = pd.read_excel(file_path)
         df.columns = [col.replace("\n", "_").replace(" ", "_").upper() for col in df.columns]
         df.rename(columns={'PLAYER': 'Player Name', 'WEEK_#': 'WEEK', 'PASSING_COMP': 'Passing Completions',
@@ -109,12 +111,11 @@ if sport == 'NFL':
     ]
 
 if sport == 'NBA':
-    @st.cache_data
+    
     def load_nba():
-        file_path = "01-26-2025-nba-season-player-feed.xlsx"
+        file_path = "02-05-2025-nba-season-player-feed.xlsx"
         df = pd.read_excel(file_path)
         df.columns = [col.replace("\n", "_").replace(" ", "_").upper() for col in df.columns]
-        print(df.columns)
         df.rename(columns={'FG': 'Field Goals', 'FGA': 'Field Goal Attempts', '3P': 'Three-Point Field Goals',
                  '3PA': 'Three-Point Field Goal Attempts', 'FT': 'Free Throws','FTA': 'Free Throw Attempts',
                  'OR': 'Offensive Rebounds', 'DR': 'Defensive Rebounds', 'TOT': 'Total Rebounds',
@@ -123,139 +124,282 @@ if sport == 'NBA':
         }, inplace=True)
         return df
     df = load_nba()
-    stat_options = ['Field Goals', 'Field Goal Attempts', 'Three-Point Field Goals', 'Three-Point Field Goal Attempts', 
-                    'Free Throws', 'Free Throw Attempts', 'Offensive Rebounds', 'Defensive Rebounds', 
-                    'Total Rebounds', 'Assists', 'Personal Fouls', 'Steals', 'Turnovers', 'Blocks', 
-                    'Points'
-                    ]
     df['WEEK'] = df.groupby('Player Name').cumcount() + 1
+    nba_schedule = pd.read_csv("nba_schedule.csv")
+    nba_schedule["Game Date"] = pd.to_datetime(nba_schedule["Game Date"], format="%m/%d/%Y")
+    today = date.today() - timedelta(days=0)
+    today_games = nba_schedule[nba_schedule["Game Date"].dt.date == today]
+    @st.cache
+    def fetch_and_process_odds(today_games):
+        odds = fetch_and_save_player_props(
+        today_games["Home/Neutral"].tolist(),
+        "basketball_nba",
+        "player_points,player_assists,player_rebounds,player_steals,player_blocks,player_points_alternate,player_assists_alternate,player_rebounds_alternate",
+        )
+        return odds
+    odds = fetch_and_process_odds(today_games)
+    games_list = [f"{visitor} at {home}" for visitor, home in zip(today_games["Visitor/Neutral"], today_games["Home/Neutral"])]
+    stat_options = ['Total Rebounds', 'Assists', 'Steals', 'Blocks', 'Points', 'All']
+    stat = st.sidebar.selectbox("Select a Metric", stat_options)
 
 
+if by_game:
+    odds = fetch_and_save_player_props(
+        today_games["Home/Neutral"].tolist(),
+        "basketball_nba",
+        "player_points,player_assists,player_rebounds,player_steals,player_blocks,player_points_alternate,player_assists_alternate,player_rebounds_alternate",
+        )
+    odds['market_key'] = odds['market_key'].replace({
+    'player_points': 'Points',
+    'player_assists': 'Assists',
+    'player_rebounds': 'Total Rebounds',
+    'player_steals' : 'Steals',
+    'player_blocks' : 'Blocks',
+    'player_points_alternate' : 'Points-ALT',
+    'player_assists_alternate' : 'Assists-ALT',
+    'player_rebounds_alternate' : 'Total Rebounds-ALT',})   
+    if stat == 'All':
+        odds = odds[(odds['outcome_name'] == "Over")]
+    else:
+        odds = odds[(odds['market_key'].str.contains(stat, case=False, na=False)) & (odds['outcome_name'] == "Over")]
+    odds = odds.sort_values(by=['market_key', 'outcome_name', 'outcome_point'], ascending=[True, True, True])
+    #bet_filters = st.sidebar.selectbox("Select a Bet Typ (Over)", odds['outcome_point'].drop_duplicates(), index=0)   
+    games_list = games_list + ['ALL'] 
+    games_cust = st.sidebar.selectbox("Today's Games", games_list)
+    if games_cust == 'ALL':
+        home_team = today_games["Home/Neutral"].dropna().astype(str).unique()
+        filtered_odds = odds[odds["home_team"].isin(home_team)]
+    else:
+        home_team = games_cust.split(" at ")[-1]
+        filtered_odds = odds[odds['home_team'].isin([home_team])]
 
+    players = filtered_odds["outcome_description"].unique()
 
-player = st.sidebar.selectbox("Select a Player", df["Player Name"].unique())
-stat = st.sidebar.selectbox("Select a Metric", stat_options)
-confidence_interval = st.sidebar.selectbox("Select Confidence Interval", options=[90, 95, 99], index=1 )
+else:
+    players = [st.sidebar.selectbox("Select a Player", df["Player Name"].unique())]
+    confidence_interval = st.sidebar.selectbox("Select Confidence Interval", options=[90, 95, 99], index=1 )
+
 max_week = df['WEEK'].max()
 num_games = st.sidebar.selectbox("Only Look at # of Last Games",  options=["Full Season"] + [str(i) for i in range(1, max_week + 1)])
-num_options = np.arange(0, 2.1, 0.1)  
-default_value = 0.5
-default_index = list(num_options).index(default_value)
-graph_spacing = st.sidebar.selectbox("Use to give spacing from points to text", num_options, index = default_index)
+filtered_data = pd.DataFrame()
 
-try:
-    stat_metric = stat.split()[1]
-except IndexError:
-    stat_metric = stat
+for player in players:
+    filtered_df = df[df["Player Name"] == player][["Player Name", "WEEK", "DATE", stat]].dropna()
+    
+    if num_games != "Full Season":
+        num_games = int(num_games)
+        player_week = filtered_df['WEEK'].max()
+        last_weeks = filtered_df[filtered_df['WEEK'] >= (player_week - num_games + 1)]['WEEK']
+        filtered_df = filtered_df[filtered_df['WEEK'].isin(last_weeks)]
+    
+    # Append to filtered_data DataFrame instead of dictionary
+    filtered_data = pd.concat([filtered_data, filtered_df], ignore_index=True)
 
-filtered_df = df[df["Player Name"] == player][["Player Name","WEEK", "DATE", stat]].dropna()
-if num_games != "Full Season":
-    num_games = int(num_games)
-    player_week = filtered_df['WEEK'].max()
-    last_weeks = filtered_df[filtered_df['WEEK'] >= (player_week - num_games + 1)]['WEEK']
-    filtered_df = filtered_df[filtered_df['WEEK'].isin(last_weeks)]
-    if sport == "NFL": 
-        st.header(f"{player} {stat} Last {num_games} Weeks ({last_weeks.min()} - {last_weeks.max()})")
-        time_blurb = f"the last {num_games} weeks"
-    else:
-        st.header(f"{player} {stat} Last {num_games} Games")
-        time_blurb = f"the last {num_games} games"       
-else:
-    st.markdown(
-        """
-        <style>
-        /* Adjust the "Full Season" header size, make it bold, and remove margin */
-        .small-header {
-            font-size: 14px !important;  /* Adjust this to make it smaller */
-            font-weight: bold;           /* Make the text bold */
-            display: inline;             /* Keep the "Full Season" on the same line */
-            margin-top: 0px;             /* Remove top margin */
-            margin-bottom: 0px;         /* Remove bottom margin */
-            padding-top: 0px;            /* Remove any internal padding */
-            padding-bottom: 0px;        /* Remove internal padding */
-        }
+bet_filters_list = odds['outcome_point'].drop_duplicates().tolist()
+print(odds.columns)
+
+all_results = []  # Store results for all bet filters
+
+if by_game:
+    for bet_filter in bet_filters_list:  # Loop through all bet filters
+        hit_percentage_list = []
         
-        /* Adjust the size of the st.header element itself */
-        .stHeader {
-            font-size: 14x !important;  /* Make the header text smaller */
-            margin-bottom: 0px !important; /* Remove bottom margin */
-        }
+        for player in filtered_data["Player Name"].unique():
+            player_data = filtered_data[filtered_data["Player Name"] == player]
+            total_games = len(player_data)
+            games_hit = (player_data[stat] >= bet_filter).sum()
+            hit_percentage_value = (games_hit / total_games * 100) if total_games > 0 else 0
+            hit_percentage_list.append({
+                "Player Name": player,
+                "Hit Percentage": hit_percentage_value,
+                "Bet Filter": bet_filter  # Add bet filter for reference
+            })
+
+        hit_percentage_df = pd.DataFrame(hit_percentage_list)
+        hit_percentage_df = hit_percentage_df.sort_values(by="Hit Percentage", ascending=False)
+
+        filtered_odds = filtered_odds.rename(columns={'outcome_description': 'Player Name'})
+        filtered_odds = filtered_odds[filtered_odds['outcome_point'] == bet_filter]
+
+
+        pivoted_odds = filtered_odds.pivot_table(
+            index=['Player Name', 'market_key'], 
+            columns='bookmaker_title', 
+            values='outcome_price', 
+            aggfunc='first'
+        ).reset_index()
+        pivoted_odds.columns.name = None
+
+        
+
+        merged_df = pd.merge(hit_percentage_df, pivoted_odds, on="Player Name", how="left")
+        merged_df['Hit Percentage'] = merged_df['Hit Percentage'].apply(lambda x: f"{x:.2f}%")
+
+        merged_df["Bet Filter"] = bet_filter  # Include bet filter in final data
+        all_results.append(merged_df)  # Append each filtered result
+
+    final_df = pd.concat(all_results, ignore_index=True)  # Combine all results
+    final_df["Hit Percentage"] = pd.to_numeric(final_df["Hit Percentage"].str.replace('%', '', regex=True), errors='coerce')
+    final_df = final_df.sort_values(by="Hit Percentage", ascending=False)
+    st.header(f"Player % with {stat} Over Last {num_games} Games (Multiple Bet Filters)")
+    html_table = final_df.to_html(classes='styled-table', index=False)
+    # Custom CSS styles for the table with left alignment
+    css = """
+        <style>
+            .streamlit-expanderHeader {
+                display: block;
+            }
+            .styled-table {
+                width: 80%;  /* Set width to a reasonable value */
+                margin: 25px 10px;
+                border-collapse: collapse;
+                font-family: 'Arial', sans-serif;
+                text-align: left;
+                margin-left: 10px; /* Aligns the table to the left */
+                margin-right: 10px; /* Remove margin on the right */
+                float: left; /* Force the table to float left */
+            }
+            .styled-table th,
+            .styled-table td {
+                padding: 12px;
+                border: 1px solid #ddd;
+            }
+            .styled-table th {
+                background-color: #003366;  /* Darker blue */
+                color: white;
+                font-weight: bold;
+                text-align: center;
+            }
+            .styled-table td {
+                text-align: center;
+            }
+            .styled-table tr:hover {
+                background-color: #f5f5f5;
+            }
         </style>
-        """, unsafe_allow_html=True
-    )
-    st.header(f"{player} {stat}")
-    time_blurb = "the Full Season"
+    """
 
+    # Add custom CSS styles to Streamlit
+    st.markdown(css, unsafe_allow_html=True)
 
-mean, min_val, max_val, std_dev, ci_lower, ci_upper = calculate_statistics(filtered_df, stat,confidence_interval)
+    # Display the styled HTML table in Streamlit
+    st.markdown(html_table, unsafe_allow_html=True)
 
-benchamrk = st.sidebar.text_input('Enter Spread To Beat:')
-
-blurb = f"""
-Upon analyzing {player}'s {stat} across {time_blurb}, we observe a clear clustering around {mean:.0f} {stat_metric.lower()}. 
-When examining the entire season, the data reveals a standard deviation of {std_dev:.2f}, with a {confidence_interval}% confidence interval 
-ranging from {ci_lower:.2f} - {ci_upper:.2f}. This provides compelling evidence supporting a strong likelihood of exceeding {benchamrk} {stat_metric.lower()}.
-"""
-
-st.markdown(blurb)
-
-
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-
-# Use markdown for larger labels and smaller values with HTML
-col1.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">Average</p>', unsafe_allow_html=True)
-col1.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0;'>{mean:.2f}</p>", unsafe_allow_html=True)
-
-col2.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">Min</p>', unsafe_allow_html=True)
-col2.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0;'>{min_val:.2f}</p>", unsafe_allow_html=True)
-
-col3.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">Max</p>', unsafe_allow_html=True)
-col3.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0;'>{max_val:.2f}</p>", unsafe_allow_html=True)
-
-col4.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">CI Lower</p>', unsafe_allow_html=True)
-col4.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0; color: red;'>{ci_lower:.2f}</p>", unsafe_allow_html=True)
-
-col5.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">CI Upper</p>', unsafe_allow_html=True)
-col5.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0; color: green;'>{ci_upper:.2f}</p>", unsafe_allow_html=True)
-
-col6.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">Std. Dev.</p>', unsafe_allow_html=True)
-col6.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0;'>{std_dev:.2f}</p>", unsafe_allow_html=True)
-
-if not filtered_df.empty:
-    if sport == "NFL":
-        text_type = 'Weeks'
-    else:
-        text_type = 'Games'
-    plot_graph(filtered_df, stat, graph_spacing, player,text_type)
 else:
-    st.warning("No data available for the selected player and stat.")
+    num_options = np.arange(0, 2.1, 0.1)  
+    default_value = 0.5
+    default_index = list(num_options).index(default_value)
+    graph_spacing = st.sidebar.selectbox("Use to give spacing from points to text", num_options, index = default_index)
+
+    try:
+        stat_metric = stat.split()[1]
+    except IndexError:
+        stat_metric = stat
+
+    
+    if num_games != "Full Season":
+        if sport == "NFL": 
+            st.header(f"{player} {stat} Last {num_games} Weeks ({last_weeks.min()} - {last_weeks.max()})")
+            time_blurb = f"the last {num_games} weeks"
+        else:
+            st.header(f"{player} {stat} Last {num_games} Games")
+            time_blurb = f"the last {num_games} games"       
+    else:
+        st.markdown(
+            """
+            <style>
+            /* Adjust the "Full Season" header size, make it bold, and remove margin */
+            .small-header {
+                font-size: 14px !important;  /* Adjust this to make it smaller */
+                font-weight: bold;           /* Make the text bold */
+                display: inline;             /* Keep the "Full Season" on the same line */
+                margin-top: 0px;             /* Remove top margin */
+                margin-bottom: 0px;         /* Remove bottom margin */
+                padding-top: 0px;            /* Remove any internal padding */
+                padding-bottom: 0px;        /* Remove internal padding */
+            }
+            
+            /* Adjust the size of the st.header element itself */
+            .stHeader {
+                font-size: 14x !important;  /* Make the header text smaller */
+                margin-bottom: 0px !important; /* Remove bottom margin */
+            }
+            </style>
+            """, unsafe_allow_html=True
+        )
+        st.header(f"{player} {stat}")
+        time_blurb = "the Full Season"
 
 
-bin_size = st.sidebar.number_input(
-    "Enter bin size for grouping",
-    min_value=1,
-    max_value=int(filtered_df[stat].max()),
-    value=1,  # Default bin size
-    step=10
-)
+    mean, min_val, max_val, std_dev, ci_lower, ci_upper = calculate_statistics(filtered_data, stat,confidence_interval)
 
-bin_ranges = pd.cut(filtered_df[stat], bins=range(0, int(filtered_df[stat].max()) + bin_size, bin_size),right=False)
-bin_counts = bin_ranges.value_counts(sort=False)
-plot_data = (filtered_df.assign(Ranges=bin_ranges)
-    .groupby('Ranges', as_index=False)
-    .size()
-    .rename(columns={"size": "Weeks"})
-)
-plot_data['Range'] = plot_data['Ranges'].apply(lambda x: f"{int(x.left)}-{int(x.right - 1)}")
-plot_data = plot_data[['Range', 'Weeks']]
+    benchamrk = st.sidebar.text_input('Enter Spread To Beat:')
 
-fig, ax = plt.subplots(figsize=(6, 2))  # Ultra-compact size
-ax.barh(plot_data['Range'], plot_data['Weeks'], color="skyblue", edgecolor="black", height=0.4)
-ax.set_xlabel("# of Games", fontsize=8)
-ax.tick_params(axis='both', which='major', labelsize=7)
-ax.set_title(f"Distribution of {player} {stat}", fontsize=9, fontweight='bold')
-ax.grid(axis='x', linestyle='--', alpha=0.5)
+    blurb = f"""
+    Upon analyzing {player}'s {stat} across {time_blurb}, we observe a clear clustering around {mean:.0f} {stat_metric.lower()}. 
+    When examining the entire season, the data reveals a standard deviation of {std_dev:.2f}, with a {confidence_interval}% confidence interval 
+    ranging from {ci_lower:.2f} - {ci_upper:.2f}. This provides compelling evidence supporting a strong likelihood of exceeding {benchamrk} {stat_metric.lower()}.
+    """
 
-# Adjust layout for a smaller chart
-plt.tight_layout()
-st.pyplot(fig)
+    st.markdown(blurb)
+
+
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+    # Use markdown for larger labels and smaller values with HTML
+    col1.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">Average</p>', unsafe_allow_html=True)
+    col1.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0;'>{mean:.2f}</p>", unsafe_allow_html=True)
+
+    col2.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">Min</p>', unsafe_allow_html=True)
+    col2.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0;'>{min_val:.2f}</p>", unsafe_allow_html=True)
+
+    col3.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">Max</p>', unsafe_allow_html=True)
+    col3.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0;'>{max_val:.2f}</p>", unsafe_allow_html=True)
+
+    col4.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">CI Lower</p>', unsafe_allow_html=True)
+    col4.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0; color: red;'>{ci_lower:.2f}</p>", unsafe_allow_html=True)
+
+    col5.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">CI Upper</p>', unsafe_allow_html=True)
+    col5.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0; color: green;'>{ci_upper:.2f}</p>", unsafe_allow_html=True)
+
+    col6.markdown('<p style="font-size: 16px; text-align: center; margin-bottom: 2px;">Std. Dev.</p>', unsafe_allow_html=True)
+    col6.markdown(f"<p style='font-size: 18px; text-align: center; margin-top: 0;'>{std_dev:.2f}</p>", unsafe_allow_html=True)
+
+    if not filtered_data.empty:
+        if sport == "NFL":
+            text_type = 'Weeks'
+        else:
+            text_type = 'Games'
+        plot_graph(filtered_data, stat, graph_spacing, player,text_type)
+    else:
+        st.warning("No data available for the selected player and stat.")
+
+
+    bin_size = st.sidebar.number_input(
+        "Enter bin size for grouping",
+        min_value=1,
+        max_value=int(filtered_data[stat].max()),
+        value=1,  # Default bin size
+        step=10
+    )
+
+    bin_ranges = pd.cut(filtered_data[stat], bins=range(0, int(filtered_data[stat].max()) + bin_size, bin_size),right=False)
+    bin_counts = bin_ranges.value_counts(sort=False)
+    plot_data = (filtered_data.assign(Ranges=bin_ranges)
+        .groupby('Ranges', as_index=False)
+        .size()
+        .rename(columns={"size": "Weeks"})
+    )
+    plot_data['Range'] = plot_data['Ranges'].apply(lambda x: f"{int(x.left)}-{int(x.right - 1)}")
+    plot_data = plot_data[['Range', 'Weeks']]
+
+    fig, ax = plt.subplots(figsize=(6, 2))  # Ultra-compact size
+    ax.barh(plot_data['Range'], plot_data['Weeks'], color="skyblue", edgecolor="black", height=0.4)
+    ax.set_xlabel("# of Games", fontsize=8)
+    ax.tick_params(axis='both', which='major', labelsize=7)
+    ax.set_title(f"Distribution of {player} {stat}", fontsize=9, fontweight='bold')
+    ax.grid(axis='x', linestyle='--', alpha=0.5)
+
+    # Adjust layout for a smaller chart
+    plt.tight_layout()
+    st.pyplot(fig)
