@@ -111,7 +111,7 @@ if sport == 'NFL':
     ]
 
 if sport == 'NBA':
-    
+    @st.cache_data 
     def load_nba():
         file_path = "02-05-2025-nba-season-player-feed.xlsx"
         df = pd.read_excel(file_path)
@@ -129,7 +129,7 @@ if sport == 'NBA':
     nba_schedule["Game Date"] = pd.to_datetime(nba_schedule["Game Date"], format="%m/%d/%Y")
     today = date.today() - timedelta(days=0)
     today_games = nba_schedule[nba_schedule["Game Date"].dt.date == today]
-    @st.cache
+    @st.cache_data 
     def fetch_and_process_odds(today_games):
         odds = fetch_and_save_player_props(
         today_games["Home/Neutral"].tolist(),
