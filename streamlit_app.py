@@ -140,7 +140,8 @@ if sport == 'NBA':
     odds = fetch_and_process_odds(today_games)
     games_list = [f"{visitor} at {home}" for visitor, home in zip(today_games["Visitor/Neutral"], today_games["Home/Neutral"])]
     stat_options = ['Total Rebounds', 'Assists', 'Steals', 'Blocks', 'Points', 'All']
-    stat = st.sidebar.selectbox("Select a Metric", stat_options)
+
+stat = st.sidebar.selectbox("Select a Metric", stat_options)
 
 
 if by_game:
@@ -158,12 +159,9 @@ if by_game:
     'player_points_alternate' : 'Points-ALT',
     'player_assists_alternate' : 'Assists-ALT',
     'player_rebounds_alternate' : 'Total Rebounds-ALT',})   
-    if stat == 'All':
-        odds = odds[(odds['outcome_name'] == "Over")]
-    else:
-        odds = odds[(odds['market_key'].str.contains(stat, case=False, na=False)) & (odds['outcome_name'] == "Over")]
+    odds = odds[(odds['market_key'].str.contains(stat, case=False, na=False)) & (odds['outcome_name'] == "Over")]
     odds = odds.sort_values(by=['market_key', 'outcome_name', 'outcome_point'], ascending=[True, True, True])
-    #bet_filters = st.sidebar.selectbox("Select a Bet Typ (Over)", odds['outcome_point'].drop_duplicates(), index=0)   
+    bet_filters = st.sidebar.selectbox("Select a Bet Typ (Over)", odds['outcome_point'].drop_duplicates(), index=0)   
     games_list = games_list + ['ALL'] 
     games_cust = st.sidebar.selectbox("Today's Games", games_list)
     if games_cust == 'ALL':
@@ -195,12 +193,12 @@ for player in players:
     # Append to filtered_data DataFrame instead of dictionary
     filtered_data = pd.concat([filtered_data, filtered_df], ignore_index=True)
 
-bet_filters_list = odds['outcome_point'].drop_duplicates().tolist()
-print(odds.columns)
+
 
 all_results = []  # Store results for all bet filters
 
 if by_game:
+    bet_filters_list = odds['outcome_point'].drop_duplicates().tolist()
     for bet_filter in bet_filters_list:  # Loop through all bet filters
         hit_percentage_list = []
         
