@@ -78,6 +78,7 @@ sport = st.sidebar.selectbox("Select a Sport", ['NBA','NFL'])
 
 
 if sport == 'NFL':
+    @st.cache_data 
     def load_nfl():
         file_path = "01-26-NFL.xlsx"
         df = pd.read_excel(file_path)
