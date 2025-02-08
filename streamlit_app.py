@@ -112,10 +112,12 @@ if sport == 'NFL':
     ]
 
 if sport == 'NBA':
-    @st.cache_data 
     def load_nba():
-        file_path = "02-05-2025-nba-season-player-feed.xlsx"
-        df = pd.read_excel(file_path)
+        uploaded_file = st.sidebar.file_uploader("Upload an NBA Excel File", type=["xlsx"])
+        if uploaded_file is not None:
+            df = pd.read_excel(uploaded_file, engine="openpyxl")  # Read uploaded file
+        else:
+            st.warning("Please upload an Excel file.")
         df.columns = [col.replace("\n", "_").replace(" ", "_").upper() for col in df.columns]
         df.rename(columns={'FG': 'Field Goals', 'FGA': 'Field Goal Attempts', '3P': 'Three-Point Field Goals',
                  '3PA': 'Three-Point Field Goal Attempts', 'FT': 'Free Throws','FTA': 'Free Throw Attempts',
