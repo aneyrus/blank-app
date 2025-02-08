@@ -63,11 +63,12 @@ def plot_graph(df, stat, text_on_graph, player, text_type):
     # Show the plot in Streamlit
     st.pyplot(fig)
 
-@st.cache_data 
+    
+@st.cache_data
 def fetch_and_save_player_props(teams, sport, markets):
     """Fetches player prop odds for a list of teams’ next games and returns the results as a single DataFrame."""
 
-    api_key = "e3f2f286022ee4300db6dffc81c306c0"
+    api_key = "159929010d6d956c430d98b4934cf43d"
     all_rows = []  # List to store rows for all teams
 
     for team in teams:

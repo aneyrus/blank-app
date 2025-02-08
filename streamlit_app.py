@@ -73,7 +73,7 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-by_game = st.sidebar.toggle("Stats Across Team")
+by_game = st.sidebar.toggle("Odds Compare")
 sport = st.sidebar.selectbox("Select a Sport", ['NBA','NFL'])
 
 
@@ -132,7 +132,7 @@ if sport == 'NBA':
     nba_schedule["Game Date"] = pd.to_datetime(nba_schedule["Game Date"], format="%m/%d/%Y")
     today = date.today() - timedelta(days=0)
     today_games = nba_schedule[nba_schedule["Game Date"].dt.date == today]
-    @st.cache_data 
+    @st.cache_data
     def fetch_and_process_odds(today_games):
         odds = fetch_and_save_player_props(
         today_games["Home/Neutral"].tolist(),
@@ -142,39 +142,29 @@ if sport == 'NBA':
         return odds
     odds = fetch_and_process_odds(today_games)
     games_list = [f"{visitor} at {home}" for visitor, home in zip(today_games["Visitor/Neutral"], today_games["Home/Neutral"])]
-    stat_options = ['Total Rebounds', 'Assists', 'Steals', 'Blocks', 'Points', 'All']
+    stat_options = ['Total Rebounds', 'Assists', 'Steals', 'Blocks', 'Points']
 
 stat = st.sidebar.selectbox("Select a Metric", stat_options)
 
 
 if by_game:
-    odds = fetch_and_save_player_props(
-        today_games["Home/Neutral"].tolist(),
-        "basketball_nba",
-        "player_points,player_assists,player_rebounds,player_steals,player_blocks,player_points_alternate,player_assists_alternate,player_rebounds_alternate",
-        )
     odds['market_key'] = odds['market_key'].replace({
     'player_points': 'Points',
     'player_assists': 'Assists',
     'player_rebounds': 'Total Rebounds',
     'player_steals' : 'Steals',
     'player_blocks' : 'Blocks',
-    'player_points_alternate' : 'Points-ALT',
-    'player_assists_alternate' : 'Assists-ALT',
-    'player_rebounds_alternate' : 'Total Rebounds-ALT',})   
+    'player_points_alternate' : 'Points',
+    'player_assists_alternate' : 'Assists',
+    'player_rebounds_alternate' : 'Total Rebounds',})   
     odds = odds[(odds['market_key'].str.contains(stat, case=False, na=False)) & (odds['outcome_name'] == "Over")]
+    allowed_bookmakers = ["FanDuel", "BetMGM", "DraftKings"]
+    odds = odds[odds["bookmaker_title"].isin(allowed_bookmakers)]
     odds = odds.sort_values(by=['market_key', 'outcome_name', 'outcome_point'], ascending=[True, True, True])
-    bet_filters = st.sidebar.selectbox("Select a Bet Typ (Over)", odds['outcome_point'].drop_duplicates(), index=0)   
-    games_list = games_list + ['ALL'] 
-    games_cust = st.sidebar.selectbox("Today's Games", games_list)
-    if games_cust == 'ALL':
-        home_team = today_games["Home/Neutral"].dropna().astype(str).unique()
-        filtered_odds = odds[odds["home_team"].isin(home_team)]
-    else:
-        home_team = games_cust.split(" at ")[-1]
-        filtered_odds = odds[odds['home_team'].isin([home_team])]
-
+    home_team = today_games["Home/Neutral"].dropna().astype(str).unique()
+    filtered_odds = odds[odds["home_team"].isin(home_team)]
     players = filtered_odds["outcome_description"].unique()
+
 
 else:
     players = [st.sidebar.selectbox("Select a Player", df["Player Name"].unique())]
@@ -202,6 +192,8 @@ all_results = []  # Store results for all bet filters
 
 if by_game:
     bet_filters_list = odds['outcome_point'].drop_duplicates().tolist()
+    all_results = []  # Store all dataframes before concatenation
+
     for bet_filter in bet_filters_list:  # Loop through all bet filters
         hit_percentage_list = []
         
@@ -212,6 +204,7 @@ if by_game:
             hit_percentage_value = (games_hit / total_games * 100) if total_games > 0 else 0
             hit_percentage_list.append({
                 "Player Name": player,
+                "Stat": stat,
                 "Hit Percentage": hit_percentage_value,
                 "Bet Filter": bet_filter  # Add bet filter for reference
             })
@@ -219,32 +212,35 @@ if by_game:
         hit_percentage_df = pd.DataFrame(hit_percentage_list)
         hit_percentage_df = hit_percentage_df.sort_values(by="Hit Percentage", ascending=False)
 
-        filtered_odds = filtered_odds.rename(columns={'outcome_description': 'Player Name'})
-        filtered_odds = filtered_odds[filtered_odds['outcome_point'] == bet_filter]
+        all_results.append(hit_percentage_df)  # Append hit percentage data
 
+    # Combine all hit percentage data before merging with pivoted odds
+    final_hit_percentage_df = pd.concat(all_results, ignore_index=True)
+    final_hit_percentage_df.to_csv('yo.csv')
+    
+    filtered_odds = filtered_odds.rename(columns={'outcome_description': 'Player Name'})
+    pivoted_odds = filtered_odds.pivot_table(
+        index=['Player Name', 'market_key', 'outcome_point'], 
+        columns='bookmaker_title', 
+        values='outcome_price', 
+        aggfunc='first'
+    ).reset_index()
+    
+    pivoted_odds.columns.name = None
+    pivoted_odds.to_csv('yo2.csv')
 
-        pivoted_odds = filtered_odds.pivot_table(
-            index=['Player Name', 'market_key'], 
-            columns='bookmaker_title', 
-            values='outcome_price', 
-            aggfunc='first'
-        ).reset_index()
-        pivoted_odds.columns.name = None
-
-        
-
-        merged_df = pd.merge(hit_percentage_df, pivoted_odds, on="Player Name", how="left")
-        merged_df['Hit Percentage'] = merged_df['Hit Percentage'].apply(lambda x: f"{x:.2f}%")
-
-        merged_df["Bet Filter"] = bet_filter  # Include bet filter in final data
-        all_results.append(merged_df)  # Append each filtered result
-
-    final_df = pd.concat(all_results, ignore_index=True)  # Combine all results
+    final_df = pd.merge(final_hit_percentage_df, pivoted_odds,
+                        left_on=["Player Name", "Bet Filter", "Stat"],  
+                        right_on=["Player Name", "outcome_point", "market_key"],
+                        how="left"  )
+    final_df['Hit Percentage'] = final_df['Hit Percentage'].apply(lambda x: f"{x:.2f}%")
     final_df["Hit Percentage"] = pd.to_numeric(final_df["Hit Percentage"].str.replace('%', '', regex=True), errors='coerce')
     final_df = final_df.sort_values(by="Hit Percentage", ascending=False)
+    final_df = final_df.dropna(subset=["FanDuel"])
+    final_df = final_df.drop(columns=["market_key", "outcome_point"])
     st.header(f"Player % with {stat} Over Last {num_games} Games (Multiple Bet Filters)")
     html_table = final_df.to_html(classes='styled-table', index=False)
-    # Custom CSS styles for the table with left alignment
+
     css = """
         <style>
             .streamlit-expanderHeader {
