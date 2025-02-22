@@ -252,7 +252,9 @@ if by_game:
         return round(ev, 3)
     final_df["EV"] = final_df.apply(calculate_ev, axis=1)
     sort_cust = st.sidebar.selectbox("Sort By", ['Hit Percentage','EV'])
-    final_df = final_df.sort_values(by=sort_cust, ascending=False)
+    percentage_filter = st.sidebar.slider("Hit Percentage Filter", min_value=0, max_value=100, step=5, value=0)
+    final_df = final_df[final_df['Hit Percentage'] >= percentage_filter].sort_values(by=sort_cust, ascending=False)
+
     st.header(f"Player % with {stat} Over Last {num_games} Games (Multiple Bet Filters)")
     html_table = final_df.to_html(classes='styled-table', index=False)
 
