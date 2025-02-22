@@ -216,7 +216,6 @@ if by_game:
 
     # Combine all hit percentage data before merging with pivoted odds
     final_hit_percentage_df = pd.concat(all_results, ignore_index=True)
-    final_hit_percentage_df.to_csv('yo.csv')
     
     filtered_odds = filtered_odds.rename(columns={'outcome_description': 'Player Name'})
     pivoted_odds = filtered_odds.pivot_table(
@@ -227,7 +226,6 @@ if by_game:
     ).reset_index()
     
     pivoted_odds.columns.name = None
-    pivoted_odds.to_csv('yo2.csv')
 
     final_df = pd.merge(final_hit_percentage_df, pivoted_odds,
                         left_on=["Player Name", "Bet Filter", "Stat"],  
@@ -238,6 +236,23 @@ if by_game:
     final_df = final_df.sort_values(by="Hit Percentage", ascending=False)
     final_df = final_df.dropna(subset=["FanDuel"])
     final_df = final_df.drop(columns=["market_key", "outcome_point"])
+    def calculate_ev(row):
+        hit_percentage = row["Hit Percentage"] / 100  
+        odds = row["FanDuel"]  #
+        
+        if np.isnan(odds): 
+            return 0
+        if odds < 0:
+            odds_factor = (100 / abs(odds)) + 1
+        elif odds > 0:
+            odds_factor = (odds / 100) + 1 
+        else:
+            odds_factor = 0  
+        ev = (odds_factor * hit_percentage) - (1 - hit_percentage)
+        return round(ev, 3)
+    final_df["EV"] = final_df.apply(calculate_ev, axis=1)
+    sort_cust = st.sidebar.selectbox("Sort By", ['Hit Percentage','EV'])
+    final_df = final_df.sort_values(by=sort_cust, ascending=False)
     st.header(f"Player % with {stat} Over Last {num_games} Games (Multiple Bet Filters)")
     html_table = final_df.to_html(classes='styled-table', index=False)
 
