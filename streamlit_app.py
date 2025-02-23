@@ -254,7 +254,6 @@ if by_game:
     sort_cust = st.sidebar.selectbox("Sort By", ['Hit Percentage','EV'])
     percentage_filter = st.sidebar.slider("Hit Percentage Filter", min_value=0, max_value=100, step=5, value=0)
     final_df = final_df[final_df['Hit Percentage'] >= percentage_filter].sort_values(by=sort_cust, ascending=False)
-
     st.header(f"Player % with {stat} Over Last {num_games} Games (Multiple Bet Filters)")
     html_table = final_df.to_html(classes='styled-table', index=False)
 
@@ -298,6 +297,7 @@ if by_game:
 
     # Display the styled HTML table in Streamlit
     st.markdown(html_table, unsafe_allow_html=True)
+
 
 else:
     num_options = np.arange(0, 2.1, 0.1)  
