@@ -305,48 +305,78 @@ if by_game:
         st.session_state.parlay_odds = [""] * 10  # Empty default list
     if "parlay_probs" not in st.session_state:
         st.session_state.parlay_probs = [""] * 10
+    if "num_legs" not in st.session_state:
+        st.session_state.num_legs = 2  # Default number of legs
+    if "calculated_payout" not in st.session_state:
+        st.session_state.calculated_payout = None
+    if "hit_probability" not in st.session_state:
+        st.session_state.hit_probability = None
+    if "player_props" not in st.session_state:
+        st.session_state.player_props = [""] * 10  # Initialize player props for each leg
 
-    num_legs = st.sidebar.number_input("Number of Legs", min_value=2, max_value=10, value=2, step=1)
+    # Sidebar inputs
+    num_legs = st.sidebar.number_input("Number of Legs", min_value=2, max_value=10, value=st.session_state.num_legs, step=1)
 
+    # Update the number of legs in session state when changed
+    st.session_state.num_legs = num_legs
+
+    # Display the inputs for odds, probabilities, and player prop in each expander
     for i in range(num_legs):
-        cols = st.sidebar.columns(2)  # Two columns for better layout
+        with st.sidebar.expander(f"Leg {i+1}"):
+            # Odds input
+            st.session_state.parlay_odds[i] = st.text_input(f"Odds for Leg {i+1}", value=st.session_state.parlay_odds[i], key=f"odds_{i}")
+            
+            # Probability input
+            st.session_state.parlay_probs[i] = st.text_input(f"Probability for Leg {i+1} (%)", value=st.session_state.parlay_probs[i], key=f"prob_{i}")
+            
+            # Player Prop input for each leg
+            st.session_state.player_props[i] = st.text_input(f"Player Prop for Leg {i+1} (optional)", value=st.session_state.player_props[i], key=f"player_prop_{i}")
 
-        with cols[0]:  # Odds input
-            st.session_state.parlay_odds[i] = st.text_input(
-                f"Leg {i+1} Odds", value=st.session_state.parlay_odds[i], key=f"odds_{i}"
-            )
-
-        with cols[1]:  # Probability input
-            st.session_state.parlay_probs[i] = st.text_input(
-                f"Leg {i+1} Probability (%)", value=st.session_state.parlay_probs[i], key=f"prob_{i}"
-            )
-
+    # Function to calculate payout
     def calculate_parlay_payout(odds_list, wager):
-        decimal_odds = [(odds / 100 + 1) if odds > 0 else (100 / abs(odds) + 1) for odds in odds_list]
+        decimal_odds = [(float(odds) / 100 + 1) if float(odds) > 0 else (100 / abs(float(odds)) + 1) for odds in odds_list]
         total_payout = wager * (np.prod(decimal_odds) - 1)
         return round(total_payout, 2)
 
+    # Function to calculate probability
     def calculate_parlay_probability(prob_list):
-        return round(np.prod(prob_list) * 100, 2)  # Convert back to percentage
+        return round(np.prod([float(prob) / 100 for prob in prob_list]) * 100, 2)
 
     wager = st.sidebar.number_input("Wager Amount ($)", min_value=1, value=10, step=1)
 
+    # Only run calculations if user clicks "Calculate Parlay Payout"
     if st.sidebar.button("Calculate Parlay Payout"):
         try:
             parlay_odds = [float(odds) for odds in st.session_state.parlay_odds[:num_legs] if odds]
-            parlay_probs = [float(prob) / 100 for prob in st.session_state.parlay_probs[:num_legs] if prob]
+            parlay_probs = [float(prob) for prob in st.session_state.parlay_probs[:num_legs] if prob]
 
             if len(parlay_odds) == num_legs and len(parlay_probs) == num_legs:
                 payout = calculate_parlay_payout(parlay_odds, wager)
                 hit_probability = calculate_parlay_probability(parlay_probs)
 
-                st.sidebar.write(f"### Potential Payout: ${payout}")
-                st.sidebar.write(f"### Probability of Hitting: {hit_probability}%")
+                # Store the results in session state
+                st.session_state.calculated_payout = payout
+                st.session_state.hit_probability = hit_probability
             else:
                 st.sidebar.error("Please enter valid odds and probabilities for all legs.")
 
         except ValueError:
             st.sidebar.error("Invalid input. Please enter numerical values.")
+
+    # Display calculation results only if available
+    if st.session_state.calculated_payout is not None:
+        st.sidebar.write(f"### Potential Payout: ${st.session_state.calculated_payout}")
+        st.sidebar.write(f"### Probability of Hitting: {st.session_state.hit_probability}%")
+
+        # Display Odds, Probability, and Player Prop for each leg
+        for i in range(num_legs):
+            st.sidebar.write(f"### Leg {i+1}:")
+            if st.session_state.player_props[i]:
+                st.sidebar.write(f"**Player Prop**: {st.session_state.player_props[i]}")
+            st.sidebar.write(f"**Probability**: {st.session_state.parlay_probs[i]}%")
+            st.sidebar.write(f"**Odds**: {st.session_state.parlay_odds[i]}")
+            
+
 else:
     num_options = np.arange(0, 2.1, 0.1)  
     default_value = 0.5
