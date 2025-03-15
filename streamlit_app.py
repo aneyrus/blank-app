@@ -111,38 +111,38 @@ if sport == 'NFL':
         'Longest Reception'
     ]
 
-if sport == 'NBA':
-    def load_nba():
-        uploaded_file = st.sidebar.file_uploader("Upload an NBA Excel File", type=["xlsx"])
-        if uploaded_file is not None:
-            df = pd.read_excel(uploaded_file, engine="openpyxl")  # Read uploaded file
-        else:
-            st.warning("Please upload an Excel file.")
-        df.columns = [col.replace("\n", "_").replace(" ", "_").upper() for col in df.columns]
-        df.rename(columns={'FG': 'Field Goals', 'FGA': 'Field Goal Attempts', '3P': 'Three-Point Field Goals',
-                 '3PA': 'Three-Point Field Goal Attempts', 'FT': 'Free Throws','FTA': 'Free Throw Attempts',
-                 'OR': 'Offensive Rebounds', 'DR': 'Defensive Rebounds', 'TOT': 'Total Rebounds',
-                 'A': 'Assists', 'PF': 'Personal Fouls', 'ST': 'Steals', 'TO': 'Turnovers',
-                 'BL': 'Blocks', 'PTS': 'Points','PLAYER__FULL_NAME': 'Player Name',
-        }, inplace=True)
-        return df
-    df = load_nba()
-    df['WEEK'] = df.groupby('Player Name').cumcount() + 1
-    nba_schedule = pd.read_csv("nba_schedule.csv")
-    nba_schedule["Game Date"] = pd.to_datetime(nba_schedule["Game Date"], format="%m/%d/%Y")
-    today = date.today() - timedelta(days=0)
-    today_games = nba_schedule[nba_schedule["Game Date"].dt.date == today]
-    @st.cache_data
-    def fetch_and_process_odds(today_games):
-        odds = fetch_and_save_player_props(
-        today_games["Home/Neutral"].tolist(),
-        "basketball_nba",
-        "player_points,player_assists,player_rebounds,player_steals,player_blocks,player_points_alternate,player_assists_alternate,player_rebounds_alternate",
-        )
-        return odds
-    odds = fetch_and_process_odds(today_games)
-    games_list = [f"{visitor} at {home}" for visitor, home in zip(today_games["Visitor/Neutral"], today_games["Home/Neutral"])]
-    stat_options = ['Total Rebounds', 'Assists', 'Steals', 'Blocks', 'Points']
+def load_nba():
+    uploaded_file = st.sidebar.file_uploader("Upload an NBA Excel File", type=["xlsx"])
+    if uploaded_file is not None:
+        df = pd.read_excel(uploaded_file, engine="openpyxl")  # Read uploaded file
+    else:
+        st.warning("Please upload an Excel file.")
+    df.columns = [col.replace("\n", "_").replace(" ", "_").upper() for col in df.columns]
+    df.rename(columns={'FG': 'Field Goals', 'FGA': 'Field Goal Attempts', '3P': 'Three-Point Field Goals',
+                '3PA': 'Three-Point Field Goal Attempts', 'FT': 'Free Throws','FTA': 'Free Throw Attempts',
+                'OR': 'Offensive Rebounds', 'DR': 'Defensive Rebounds', 'TOT': 'Total Rebounds',
+                'A': 'Assists', 'PF': 'Personal Fouls', 'ST': 'Steals', 'TO': 'Turnovers',
+                'BL': 'Blocks', 'PTS': 'Points','PLAYER__FULL_NAME': 'Player Name',
+    }, inplace=True)
+    return df
+df = load_nba()
+df['WEEK'] = df.groupby('Player Name').cumcount() + 1
+nba_schedule = pd.read_csv("nba_schedule.csv")
+nba_schedule["Game Date"] = pd.to_datetime(nba_schedule["Game Date"], format="%m/%d/%Y")
+today = date.today() - timedelta(days=0)
+today_games = nba_schedule[nba_schedule["Game Date"].dt.date == today]
+
+@st.cache
+def fetch_and_process_odds(today_games):
+    odds = fetch_and_save_player_props(
+    today_games["Home/Neutral"].tolist(),
+    "basketball_nba",
+    "player_points,player_assists,player_rebounds,player_steals,player_blocks,player_points_alternate,player_assists_alternate,player_rebounds_alternate",
+    )
+    return odds
+odds = fetch_and_process_odds(today_games)
+games_list = [f"{visitor} at {home}" for visitor, home in zip(today_games["Visitor/Neutral"], today_games["Home/Neutral"])]
+stat_options = ['Total Rebounds', 'Assists', 'Steals', 'Blocks', 'Points']
 
 stat = st.sidebar.selectbox("Select a Metric", stat_options)
 
@@ -234,11 +234,11 @@ if by_game:
     final_df['Hit Percentage'] = final_df['Hit Percentage'].apply(lambda x: f"{x:.2f}%")
     final_df["Hit Percentage"] = pd.to_numeric(final_df["Hit Percentage"].str.replace('%', '', regex=True), errors='coerce')
     final_df = final_df.sort_values(by="Hit Percentage", ascending=False)
-    final_df = final_df.dropna(subset=["FanDuel"])
+    final_df = final_df.dropna(subset=["DraftKings"])
     final_df = final_df.drop(columns=["market_key", "outcome_point"])
     def calculate_ev(row):
         hit_percentage = row["Hit Percentage"] / 100  
-        odds = row["FanDuel"]  #
+        odds = row["DraftKings"]  #
         
         if np.isnan(odds): 
             return 0

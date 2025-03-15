@@ -64,11 +64,11 @@ def plot_graph(df, stat, text_on_graph, player, text_type):
     st.pyplot(fig)
 
     
-@st.cache_data
+@st.cache
 def fetch_and_save_player_props(teams, sport, markets):
     """Fetches player prop odds for a list of teams’ next games and returns the results as a single DataFrame."""
 
-    api_key = "952453da346fa936e901019107c078c1"
+    api_key = "5d1042adbdaf5f74ccb9818bf2607578"
     all_rows = []  # List to store rows for all teams
 
     for team in teams:
@@ -110,7 +110,8 @@ def fetch_and_save_player_props(teams, sport, markets):
             continue
 
         player_props = odds_response.json()
-
+        
+        
         # Step 3: Convert to DataFrame
         for bookmaker in player_props.get('bookmakers', []):
             for market in bookmaker.get('markets', []):
