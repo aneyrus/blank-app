@@ -234,11 +234,11 @@ if by_game:
     final_df['Hit Percentage'] = final_df['Hit Percentage'].apply(lambda x: f"{x:.2f}%")
     final_df["Hit Percentage"] = pd.to_numeric(final_df["Hit Percentage"].str.replace('%', '', regex=True), errors='coerce')
     final_df = final_df.sort_values(by="Hit Percentage", ascending=False)
-    final_df = final_df.dropna(subset=["Fanduel"])
+    final_df = final_df.dropna(subset=["Draftkings"])
     final_df = final_df.drop(columns=["market_key", "outcome_point"])
     def calculate_ev(row):
         hit_percentage = row["Hit Percentage"] / 100  
-        odds = row["Fanduel"]  #
+        odds = row["Draftkings"]  #
         
         if np.isnan(odds): 
             return 0
