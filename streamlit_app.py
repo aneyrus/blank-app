@@ -171,7 +171,7 @@ else:
     confidence_interval = st.sidebar.selectbox("Select Confidence Interval", options=[90, 95, 99], index=1 )
 
 max_week = df['WEEK'].max()
-num_games = st.sidebar.selectbox("Only Look at # of Last Games",  options=["Full Season"] + [str(i) for i in range(1, max_week + 1)])
+num_games = st.sidebar.selectbox("Only Look at # of Last Games",  options=["Full Season"] + [str(i) for i in range(1, max_week + 1)], index = 20)
 filtered_data = pd.DataFrame()
 
 for player in players:
