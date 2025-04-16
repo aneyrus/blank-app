@@ -132,7 +132,7 @@ nba_schedule["Game Date"] = pd.to_datetime(nba_schedule["Game Date"], format="%m
 today = date.today() - timedelta(days=0)
 today_games = nba_schedule[nba_schedule["Game Date"].dt.date == today]
 
-@st.cache_data
+@st.cache
 def fetch_and_process_odds(today_games):
     odds = fetch_and_save_player_props(
     today_games["Home/Neutral"].tolist(),
