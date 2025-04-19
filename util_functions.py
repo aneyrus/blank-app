@@ -68,7 +68,7 @@ def plot_graph(df, stat, text_on_graph, player, text_type):
 def fetch_and_save_player_props(teams, sport, markets):
     """Fetches player prop odds for a list of teams’ next games and returns the results as a single DataFrame."""
 
-    api_key = "1bb1ec4960e1fad30038ff7bfc323909"
+    api_key = "4988f73123c2a09e2133a64f359d6445"
     all_rows = []  # List to store rows for all teams
 
     for team in teams:
