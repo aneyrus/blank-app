@@ -66,7 +66,7 @@ def plot_graph(df, stat, text_on_graph, player, text_type):
     
 @st.cache_data
 def fetch_and_save_player_props(teams, sport, markets):
-    """Fetches player prop odds for a list of teams’ next games and returns the results as a single DataFrame."""
+    """Fetches player prop odds for a list of teams’ next games and returns the results as a scingle DataFrame."""
 
     api_key = "4988f73123c2a09e2133a64f359d6445"
     all_rows = []  # List to store rows for all teams
